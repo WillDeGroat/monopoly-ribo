@@ -123,7 +123,8 @@ class MonoPolyStats:
     def _beta_binomial_results(self, fit: Any) -> pd.DataFrame:
         if self.contrast.kind not in {'redistribution', 'fraction_vs_input'}:
             raise MonoPolyInputError(
-                'The beta-binomial engine supports only redistribution and fraction-versus-input contrasts.'
+                'The beta-binomial engine supports only redistribution and '
+                'fraction-versus-input contrasts.'
             )
 
         allocation_fractions = self.dataset.allocation_fractions or []
@@ -156,7 +157,8 @@ class MonoPolyStats:
     def _dirichlet_multinomial_results(self, fit: Any) -> pd.DataFrame:
         if self.contrast.kind != 'omnibus_interaction':
             raise MonoPolyInputError(
-                'The Dirichlet-multinomial engine supports only omnibus interaction contrasts.'
+                'The Dirichlet-multinomial engine supports only omnibus '
+                'interaction contrasts.'
             )
 
         _validate_condition_orientation(
@@ -167,6 +169,10 @@ class MonoPolyStats:
         return _result_table(fit, 'allocation')
 
     def _joint_latent_results(self, fit: Any) -> pd.DataFrame:
+        _validate_condition_orientation(
+            self.dataset,
+            self.contrast
+        )
         results = _result_table(fit, 'joint')
         matching = results['contrast'] == self.contrast.label
 
@@ -234,23 +240,14 @@ def _validate_alpha(alpha: float) -> None:
         )
 
 
-def _validate_condition_orientation(dataset: Any, contrast: FractionContrast) -> None:
-    condition_levels = sorted(
-        pd.unique(dataset.metadata[dataset.condition].astype(str))
-    )
-
-    if len(condition_levels) != 2:
+def _validate_condition_orientation(
+    dataset: Any,
+    contrast: FractionContrast
+) -> None:
+    if contrast.case != dataset.case or contrast.control != dataset.control:
         raise MonoPolyInputError(
-            'The requested engine requires exactly two condition levels.'
-        )
-
-    expected_control = condition_levels[0]
-    expected_case = condition_levels[1]
-
-    if contrast.case != expected_case or contrast.control != expected_control:
-        raise MonoPolyInputError(
-            f'The fitted engine uses case {expected_case!r} and control '
-            f'{expected_control!r}, but contrast {contrast.label!r} was requested.'
+            f'The fitted engine uses case {dataset.case!r} and control '
+            f'{dataset.control!r}, but contrast {contrast.label!r} was requested.'
         )
 
 

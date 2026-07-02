@@ -54,16 +54,25 @@ def analyze(
     seed: int = 0,
     quiet: bool = False
 ) -> MonoPolyResult:
+    configured_abundance_fraction = abundance_fraction or fraction_order[0]
+    configured_allocation_fractions = allocation_fractions or [
+        fraction_name
+        for fraction_name in fraction_order
+        if fraction_name != configured_abundance_fraction
+    ]
+
     dataset = MonoPolyDataSet(
         counts = counts,
         metadata = metadata,
         subject = subject,
         condition = condition,
+        case = case,
+        control = control,
         fraction = fraction,
         fraction_order = fraction_order,
         covariates = covariates,
-        abundance_fraction = abundance_fraction,
-        allocation_fractions = allocation_fractions,
+        abundance_fraction = configured_abundance_fraction,
+        allocation_fractions = configured_allocation_fractions,
         engines = engines,
         fraction_measurement = fraction_measurement,
         fraction_weights = fraction_weights,
@@ -74,27 +83,18 @@ def analyze(
         quiet = quiet
     ).fit()
 
-    configured_abundance_fraction = abundance_fraction or fraction_order[0]
-    configured_allocation_fractions = allocation_fractions or [
-        fraction_name
-        for fraction_name in fraction_order
-        if fraction_name != configured_abundance_fraction
-    ]
-
     abundance_results = _abundance_results(
         dataset,
         case,
         control,
         configured_abundance_fraction
     )
-
     redistribution_results = _redistribution_results(
         dataset,
         case,
         control,
         configured_allocation_fractions
     )
-
     fraction_effects = _fraction_effect_results(
         dataset,
         case,
@@ -102,7 +102,6 @@ def analyze(
         configured_abundance_fraction,
         configured_allocation_fractions
     )
-
     allocation_results = _allocation_results(dataset)
     joint_results = _joint_results(dataset)
 
@@ -112,11 +111,9 @@ def analyze(
         allocation_results,
         joint_results
     )
-
     classification_results = integrated_results[
         ['regulatory_class', 'classification_reason']
     ].copy()
-
     stability_results = _stability_results(
         dataset,
         case,
@@ -148,12 +145,7 @@ def analyze(
     )
 
 
-def _abundance_results(
-    dataset: MonoPolyDataSet,
-    case: str,
-    control: str,
-    abundance_fraction: str
-) -> pd.DataFrame:
+def _abundance_results(dataset: MonoPolyDataSet, case: str, control: str, abundance_fraction: str) -> pd.DataFrame:
     if 'nb_interaction' not in dataset.fits:
         return _empty_results()
 
@@ -170,12 +162,7 @@ def _abundance_results(
     ).summary()
 
 
-def _redistribution_results(
-    dataset: MonoPolyDataSet,
-    case: str,
-    control: str,
-    allocation_fractions: list[str]
-) -> pd.DataFrame:
+def _redistribution_results( dataset: MonoPolyDataSet, case: str, control: str, allocation_fractions: list[str]) -> pd.DataFrame:
     if 'nb_interaction' not in dataset.fits or len(allocation_fractions) < 2:
         return _empty_results()
 
@@ -212,7 +199,6 @@ def _fraction_effect_results(
             allocation_fraction,
             abundance_fraction
         )
-
         fraction_effects[allocation_fraction] = MonoPolyStats(
             dataset,
             contrast = contrast,
@@ -274,12 +260,7 @@ def _joint_results(dataset: MonoPolyDataSet) -> pd.DataFrame:
     return joint_fit.results['joint'].copy()
 
 
-def _stability_results(
-    dataset: MonoPolyDataSet,
-    case: str,
-    control: str,
-    allocation_fractions: list[str]
-) -> pd.DataFrame:
+def _stability_results(dataset: MonoPolyDataSet, case: str, control: str, allocation_fractions: list[str]) -> pd.DataFrame:
     if 'nb_interaction' not in dataset.fits or len(allocation_fractions) < 2:
         return pd.DataFrame()
 
@@ -289,7 +270,6 @@ def _stability_results(
         allocation_fractions[-1],
         allocation_fractions[0]
     )
-
     _, stability_results = leave_one_subject_out(
         dataset,
         contrast,

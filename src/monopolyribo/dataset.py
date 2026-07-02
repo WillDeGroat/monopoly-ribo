@@ -10,7 +10,12 @@ from .engines import ENGINE_CLASSES
 from .exceptions import MonoPolyInputError
 from .filtering import filter_counts, filtering_table
 from .normalization import median_ratio_size_factors, recovery_factors
-from .validation import align_metadata, validate_complete_subject_fractions, validate_counts, validate_metadata
+from .validation import (
+    align_metadata,
+    validate_complete_subject_fractions,
+    validate_counts,
+    validate_metadata
+)
 # --------------------------------------------------
 
 
@@ -30,6 +35,8 @@ class MonoPolyDataSet:
         metadata: pd.DataFrame,
         subject: str,
         condition: str,
+        case: str,
+        control: str,
         fraction: str,
         fraction_order: list[str],
         covariates: list[str] | None = None,
@@ -49,7 +56,11 @@ class MonoPolyDataSet:
 
         covariates = [] if covariates is None else list(covariates)
         fraction_order = list(fraction_order)
-        allocation_fractions = None if allocation_fractions is None else list(allocation_fractions)
+        allocation_fractions = (
+            None
+            if allocation_fractions is None
+            else list(allocation_fractions)
+        )
 
         validate_metadata(
             aligned_metadata,
@@ -59,7 +70,13 @@ class MonoPolyDataSet:
             fraction_order,
             covariates
         )
-
+        _validate_condition_configuration(
+            aligned_metadata,
+            subject,
+            condition,
+            case,
+            control
+        )
         _validate_fraction_configuration(
             fraction_order,
             abundance_fraction,
@@ -68,19 +85,25 @@ class MonoPolyDataSet:
         _validate_fraction_measurement(fraction_measurement, fraction_weights)
         _validate_filtering_parameters(min_count, min_samples)
         _validate_runtime_parameters(n_cpus, seed, quiet)
+        _validate_unique_subject_fractions(
+            aligned_metadata,
+            subject,
+            fraction
+        )
 
-        if allocation_fractions is not None:
-            validate_complete_subject_fractions(
-                aligned_metadata,
-                subject,
-                fraction,
-                allocation_fractions
-            )
+        validate_complete_subject_fractions(
+            aligned_metadata,
+            subject,
+            fraction,
+            fraction_order
+        )
 
         self.counts = counts.astype(int).copy()
         self.metadata = aligned_metadata.copy()
         self.subject = subject
         self.condition = condition
+        self.case = case
+        self.control = control
         self.fraction = fraction
         self.fraction_order = fraction_order
         self.covariates = covariates
@@ -96,12 +119,19 @@ class MonoPolyDataSet:
 
         kept_features = filter_counts(self.counts, min_count, min_samples)
         self.filtered_counts = self.counts.loc[:, kept_features].copy()
-        self.filters = filtering_table(self.counts, kept_features, min_count, min_samples)
+        self.filters = filtering_table(
+            self.counts,
+            kept_features,
+            min_count,
+            min_samples
+        )
 
         if self.filtered_counts.shape[1] == 0:
             raise MonoPolyInputError('Filtering removed all features from the count matrix.')
 
-        self.size_factor = median_ratio_size_factors(self.filtered_counts).reindex(self.counts.index)
+        self.size_factor = median_ratio_size_factors(
+            self.filtered_counts
+        ).reindex(self.counts.index)
 
         if self.size_factor.isna().any():
             raise MonoPolyInputError('Size factors are missing for one or more samples.')
@@ -199,6 +229,78 @@ class MonoPolyDataSet:
         return self
 
 
+def _validate_condition_configuration(metadata: pd.DataFrame, subject: str, condition: str, case: str, control: str) -> None:
+    if not isinstance(case, str) or not case:
+        raise MonoPolyInputError('The case condition must be a nonempty string.')
+
+    if not isinstance(control, str) or not control:
+        raise MonoPolyInputError('The control condition must be a nonempty string.')
+
+    if case == control:
+        raise MonoPolyInputError('The case and control conditions must be different.')
+
+    observed_conditions = set(metadata[condition].astype(str))
+    expected_conditions = {case, control}
+
+    if observed_conditions != expected_conditions:
+        raise MonoPolyInputError(
+            f'The condition column must contain exactly case {case!r} and control '
+            f'{control!r}; observed {sorted(observed_conditions)}.'
+        )
+
+    subject_conditions = (
+        metadata.assign(
+            __subject = metadata[subject].astype(str),
+            __condition = metadata[condition].astype(str)
+        )
+        .drop_duplicates(['__subject', '__condition'])
+    )
+    conditions_per_subject = subject_conditions.groupby(
+        '__subject',
+        observed = True
+    )['__condition'].nunique()
+
+    if (conditions_per_subject != 1).any():
+        invalid_subjects = conditions_per_subject[conditions_per_subject != 1].index.tolist()[:5]
+        raise MonoPolyInputError(
+            'Each subject must belong to exactly one condition. '
+            f'Examples of invalid subjects: {invalid_subjects}.'
+        )
+
+    subjects_per_condition = subject_conditions.groupby(
+        '__condition',
+        observed = True
+    )['__subject'].nunique()
+
+    if (subjects_per_condition.reindex([control, case], fill_value = 0) < 2).any():
+        raise MonoPolyInputError(
+            'At least two subjects are required in both the case and control conditions.'
+        )
+
+
+def _validate_unique_subject_fractions(metadata: pd.DataFrame, subject: str, fraction: str) -> None:
+    duplicated = metadata.assign(
+        __subject = metadata[subject].astype(str),
+        __fraction = metadata[fraction].astype(str)
+    ).duplicated(['__subject', '__fraction'], keep = False)
+
+    if duplicated.any():
+        duplicate_pairs = (
+            metadata.assign(
+                __subject = metadata[subject].astype(str),
+                __fraction = metadata[fraction].astype(str)
+            )
+            .loc[duplicated, ['__subject', '__fraction']]
+            .drop_duplicates()
+            .head(5)
+            .to_dict('records')
+        )
+        raise MonoPolyInputError(
+            'Exactly one sample is required for each subject and fraction. '
+            f'Examples of duplicated pairs: {duplicate_pairs}.'
+        )
+
+
 def _validate_fraction_configuration(fraction_order: list[str], abundance_fraction: str | None, allocation_fractions: list[str] | None) -> None:
     if not fraction_order:
         raise MonoPolyInputError('At least one fraction must be included in fraction_order.')
@@ -210,7 +312,9 @@ def _validate_fraction_configuration(fraction_order: list[str], abundance_fracti
         raise MonoPolyInputError('The abundance fraction must be included in fraction_order.')
 
     if abundance_fraction is not None and fraction_order[0] != abundance_fraction:
-        raise MonoPolyInputError('The abundance fraction must be the first entry in fraction_order.')
+        raise MonoPolyInputError(
+            'The abundance fraction must be the first entry in fraction_order.'
+        )
 
     if allocation_fractions is None:
         return
