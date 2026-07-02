@@ -75,6 +75,7 @@ class BetaBinomialEngine:
                 'control': dataset.control,
                 'condition_coding': 'case=1, control=0'
             }
+        )
 
 
 def _subject_conditions(dataset: Any) -> pd.Series:
