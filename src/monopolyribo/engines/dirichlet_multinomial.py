@@ -7,7 +7,12 @@ import numpy as np
 import pandas as pd
 from scipy import optimize, stats
 
-from ..statistics import adjust_pvalues, allocation_wide_counts, default_fraction_weights, dirichlet_multinomial_nll
+from ..statistics import (
+    adjust_pvalues,
+    allocation_wide_counts,
+    default_fraction_weights,
+    dirichlet_multinomial_nll
+)
 from .base import EngineFit
 # --------------------------------------------------
 
@@ -26,13 +31,23 @@ class DirichletMultinomialEngine:
         ]
 
         if len(fractions) < 2:
-            raise ValueError('The Dirichlet-multinomial engine requires at least two allocation fractions.')
+            raise ValueError(
+                'The Dirichlet-multinomial engine requires at least two '
+                'allocation fractions.'
+            )
 
-        fraction_weights = default_fraction_weights(fractions, dataset.fraction_weights)
+        fraction_weights = default_fraction_weights(
+            fractions,
+            dataset.fraction_weights
+        )
         wide_counts = allocation_wide_counts(dataset, fractions)
 
         subject_conditions = _subject_conditions(dataset)
-        condition_indicator = _condition_indicator(subject_conditions.reindex(wide_counts.index))
+        condition_indicator = _condition_indicator(
+            subject_conditions.reindex(wide_counts.index),
+            dataset.case,
+            dataset.control
+        )
 
         result_rows: list[dict[str, Any]] = []
 
@@ -64,17 +79,28 @@ class DirichletMultinomialEngine:
             metadata = {
                 'fraction_measurement': dataset.fraction_measurement,
                 'fractions': fractions,
-                'fraction_weights': fraction_weights
+                'fraction_weights': fraction_weights,
+                'case': dataset.case,
+                'control': dataset.control,
+                'condition_coding': 'case=1, control=0'
             }
         )
 
 
 def _subject_conditions(dataset: Any) -> pd.Series:
-    subject_metadata = dataset.metadata[[dataset.subject, dataset.condition]]
-    condition_counts = subject_metadata.groupby(dataset.subject)[dataset.condition].nunique()
+    subject_metadata = dataset.metadata[
+        [dataset.subject, dataset.condition]
+    ]
 
-    if (condition_counts > 1).any():
-        raise ValueError('Each subject must be associated with exactly one condition.')
+    condition_counts = subject_metadata.groupby(
+        dataset.subject,
+        observed = True
+    )[dataset.condition].nunique()
+
+    if (condition_counts != 1).any():
+        raise ValueError(
+            'Each subject must be associated with exactly one condition.'
+        )
 
     return (
         subject_metadata.drop_duplicates(dataset.subject)
@@ -83,19 +109,28 @@ def _subject_conditions(dataset: Any) -> pd.Series:
     )
 
 
-def _condition_indicator(subject_conditions: pd.Series) -> np.ndarray:
+def _condition_indicator(
+    subject_conditions: pd.Series,
+    case: str,
+    control: str
+) -> np.ndarray:
     if subject_conditions.isna().any():
-        raise ValueError('Condition metadata are missing for one or more subjects.')
+        raise ValueError(
+            'Condition metadata are missing for one or more subjects.'
+        )
 
-    condition_levels = sorted(subject_conditions.unique())
+    observed_conditions = set(subject_conditions.astype(str).unique())
+    expected_conditions = {case, control}
 
-    if len(condition_levels) != 2:
-        raise ValueError('The Dirichlet-multinomial engine requires exactly two condition levels.')
+    if observed_conditions != expected_conditions:
+        raise ValueError(
+            'The Dirichlet-multinomial engine requires subject conditions '
+            'to match the configured case and control exactly. '
+            f'Expected {sorted(expected_conditions)!r}, '
+            f'observed {sorted(observed_conditions)!r}.'
+        )
 
-    # This treatment coding should be replaced when explicit case and control levels are added to the dataset.
-    case_condition = condition_levels[-1]
-
-    return (subject_conditions.to_numpy() == case_condition).astype(float)
+    return subject_conditions.astype(str).eq(case).to_numpy(dtype = float)
 
 
 def _fit_feature(
@@ -126,11 +161,20 @@ def _fit_feature(
             n_informative
         )
 
-    pooled_probabilities = (counts.sum(axis = 0) + 0.5) / (counts.sum() + 0.5 * n_fractions)
+    pooled_probabilities = (
+        counts.sum(axis = 0) + 0.5
+    ) / (
+        counts.sum() + 0.5 * n_fractions
+    )
     reference_probability = pooled_probabilities[0]
 
-    intercepts = np.log(pooled_probabilities[1:] / reference_probability)
-    condition_effects = np.zeros(n_fractions - 1, dtype = float)
+    intercepts = np.log(
+        pooled_probabilities[1:] / reference_probability
+    )
+    condition_effects = np.zeros(
+        n_fractions - 1,
+        dtype = float
+    )
     log_concentration = np.log(20.0)
 
     full_initial_parameters = np.concatenate(
@@ -151,20 +195,39 @@ def _fit_feature(
     full_model = optimize.minimize(
         dirichlet_multinomial_nll,
         full_initial_parameters,
-        args = (counts, condition_indicator, n_fractions, True),
+        args = (
+            counts,
+            condition_indicator,
+            n_fractions,
+            True
+        ),
         method = 'L-BFGS-B',
-        bounds = [(-8.0, 8.0)] * (2 * (n_fractions - 1)) + [(-3.0, 8.0)]
+        bounds = (
+            [(-8.0, 8.0)] * (2 * (n_fractions - 1))
+            + [(-3.0, 8.0)]
+        )
     )
 
     reduced_model = optimize.minimize(
         dirichlet_multinomial_nll,
         reduced_initial_parameters,
-        args = (counts, condition_indicator, n_fractions, False),
+        args = (
+            counts,
+            condition_indicator,
+            n_fractions,
+            False
+        ),
         method = 'L-BFGS-B',
-        bounds = [(-8.0, 8.0)] * (n_fractions - 1) + [(-3.0, 8.0)]
+        bounds = (
+            [(-8.0, 8.0)] * (n_fractions - 1)
+            + [(-3.0, 8.0)]
+        )
     )
 
-    if not _valid_optimization(full_model) or not _valid_optimization(reduced_model):
+    if (
+        not _valid_optimization(full_model)
+        or not _valid_optimization(reduced_model)
+    ):
         return _result_row(
             feature_id,
             np.nan,
@@ -211,19 +274,32 @@ def _fit_feature(
         )
 
     likelihood_ratio = max(0.0, likelihood_ratio)
-    pvalue = float(stats.chi2.sf(likelihood_ratio, n_fractions - 1))
+    pvalue = float(
+        stats.chi2.sf(
+            likelihood_ratio,
+            n_fractions - 1
+        )
+    )
 
-    condition_effects = full_model.x[n_fractions - 1:2 * (n_fractions - 1)]
+    condition_effects = full_model.x[
+        n_fractions - 1:2 * (n_fractions - 1)
+    ]
 
     weight_differences = np.array(
         [
-            fraction_weights[fraction] - fraction_weights[fractions[0]]
+            fraction_weights[fraction]
+            - fraction_weights[fractions[0]]
             for fraction in fractions[1:]
         ],
         dtype = float
     )
 
-    effect = float(np.dot(weight_differences, condition_effects) / np.log(2.0))
+    effect = float(
+        np.dot(
+            weight_differences,
+            condition_effects
+        ) / np.log(2.0)
+    )
 
     warning_code = (
         'relative_library_caution'
@@ -265,7 +341,10 @@ def _result_row(
 ) -> dict[str, Any]:
     return {
         'feature_id': feature_id,
-        'contrast': 'global_condition_allocation',
+        'contrast': (
+            f'{dataset.case}_vs_{dataset.control}:'
+            'global_condition_allocation'
+        ),
         'engine': DirichletMultinomialEngine.name,
         'effect': effect,
         'effect_scale': 'weighted_log2_allocation_shift',
