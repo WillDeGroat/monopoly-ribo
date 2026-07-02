@@ -26,12 +26,21 @@ class BetaBinomialEngine:
 
         denominator_fraction = fractions[0]
         numerator_fraction = fractions[1]
-        contrast_label = f'{numerator_fraction}_vs_{denominator_fraction}'
+        contrast_label = (
+            f'{dataset.case}_vs_{dataset.control}:'
+            f'{numerator_fraction}_vs_{denominator_fraction}'
+        )
 
         wide_counts = allocation_wide_counts(dataset, [denominator_fraction, numerator_fraction])
 
         subject_conditions = _subject_conditions(dataset)
-        condition_indicator = _condition_indicator(subject_conditions.reindex(wide_counts.index))
+        aligned_conditions = subject_conditions.reindex(wide_counts.index)
+        
+        condition_indicator = _condition_indicator(
+            aligned_conditions,
+            dataset.case,
+            dataset.control
+        )
 
         result_rows: list[dict[str, Any]] = []
 
@@ -61,9 +70,11 @@ class BetaBinomialEngine:
             results = {'allocation': results},
             metadata = {
                 'fraction_measurement': dataset.fraction_measurement,
-                'fractions': fractions
+                'fractions': fractions,
+                'case': dataset.case,
+                'control': dataset.control,
+                'condition_coding': 'case=1, control=0'
             }
-        )
 
 
 def _subject_conditions(dataset: Any) -> pd.Series:
@@ -80,19 +91,22 @@ def _subject_conditions(dataset: Any) -> pd.Series:
     )
 
 
-def _condition_indicator(subject_conditions: pd.Series) -> np.ndarray:
+def _condition_indicator(subject_conditions: pd.Series, case: str, control: str) -> np.ndarray:
     if subject_conditions.isna().any():
         raise ValueError('Condition metadata are missing for one or more subjects.')
 
-    condition_levels = sorted(subject_conditions.unique())
+    observed_conditions = set(subject_conditions.astype(str).unique())
+    expected_conditions = {case, control}
 
-    if len(condition_levels) != 2:
-        raise ValueError('The beta-binomial engine requires exactly two condition levels.')
+    if observed_conditions != expected_conditions:
+        raise ValueError(
+            'The beta-binomial engine requires subject conditions to match '
+            f'the configured case and control exactly. Expected '
+            f'{sorted(expected_conditions)!r}, observed '
+            f'{sorted(observed_conditions)!r}.'
+        )
 
-    # Retains the existing treatment coding in which the final sorted level is the case.
-    case_condition = condition_levels[-1]
-
-    return (subject_conditions.to_numpy() == case_condition).astype(float)
+    return subject_conditions.astype(str).eq(case).to_numpy(dtype = float)
 
 
 def _fit_feature(
