@@ -153,7 +153,10 @@ def _custom_exposure(metadata: pd.DataFrame, fraction_weights: str | pd.Series |
             errors = 'coerce'
         )
 
-    raise MonoPolyInputError('Custom exposure requires a metadata column name, pandas Series, or sample-indexed dictionary.')
+    raise MonoPolyInputError(
+        'Custom exposure requires a metadata column name, pandas Series, or '
+        'sample-indexed dictionary.'
+    )
 
 
 def _validate_count_matrix(counts: pd.DataFrame) -> None:
