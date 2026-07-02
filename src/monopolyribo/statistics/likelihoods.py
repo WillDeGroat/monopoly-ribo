@@ -93,8 +93,10 @@ def dirichlet_multinomial_nll(
     expected_parameters = 2 * n_coefficients + 1 if free else n_coefficients + 1
 
     if parameters.shape != (expected_parameters,):
-        raise ValueError(f'The Dirichlet-multinomial model requires {expected_parameters} parameters when free is {free}.')
-
+        raise ValueError(
+            'The Dirichlet-multinomial model requires '
+            f'{expected_parameters} parameters when free is {free}.'
+        )
     intercepts = parameters[:n_coefficients]
 
     if free:
