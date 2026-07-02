@@ -81,6 +81,8 @@ def leave_one_subject_out(dataset: Any, contrast: FractionContrast, engine: str 
                 metadata = dataset.metadata.loc[keep_samples],
                 subject = dataset.subject,
                 condition = dataset.condition,
+                case = dataset.case,
+                control = dataset.control,
                 fraction = dataset.fraction,
                 fraction_order = dataset.fraction_order,
                 covariates = dataset.covariates,
@@ -93,7 +95,7 @@ def leave_one_subject_out(dataset: Any, contrast: FractionContrast, engine: str 
                 min_samples = dataset.min_samples,
                 n_cpus = dataset.n_cpus,
                 seed = dataset.seed,
-                auto_fit = False
+                quiet = dataset.quiet
             ).fit()
 
             subset_results = MonoPolyStats(
@@ -204,6 +206,7 @@ def _summarize_leave_one_subject_out(detail: pd.DataFrame) -> pd.DataFrame:
     )
 
     attempted_fits = detail.groupby('feature_id').size()
+    summary['engine'] = successful.groupby('feature_id')['engine'].first().reindex(summary.index)
     summary['n_attempted_fits'] = attempted_fits.reindex(summary.index).astype(int)
 
     largest_influence_indices = successful.groupby('feature_id')['absolute_effect_change'].idxmax()
