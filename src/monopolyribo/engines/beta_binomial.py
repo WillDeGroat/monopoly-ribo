@@ -17,12 +17,15 @@ class BetaBinomialEngine:
 
     def fit(self, dataset: Any) -> EngineFit:
         fractions = dataset.allocation_fractions or [
-            fraction for fraction in dataset.fraction_order
+            fraction
+            for fraction in dataset.fraction_order
             if fraction != dataset.abundance_fraction
         ]
 
         if len(fractions) != 2:
-            raise ValueError('The beta-binomial engine requires exactly two allocation fractions.')
+            raise ValueError(
+                'The beta-binomial engine requires exactly two allocation fractions.'
+            )
 
         denominator_fraction = fractions[0]
         numerator_fraction = fractions[1]
@@ -31,11 +34,14 @@ class BetaBinomialEngine:
             f'{numerator_fraction}_vs_{denominator_fraction}'
         )
 
-        wide_counts = allocation_wide_counts(dataset, [denominator_fraction, numerator_fraction])
+        wide_counts = allocation_wide_counts(
+            dataset,
+            [denominator_fraction, numerator_fraction]
+        )
 
         subject_conditions = _subject_conditions(dataset)
         aligned_conditions = subject_conditions.reindex(wide_counts.index)
-        
+
         condition_indicator = _condition_indicator(
             aligned_conditions,
             dataset.case,
@@ -45,8 +51,13 @@ class BetaBinomialEngine:
         result_rows: list[dict[str, Any]] = []
 
         for feature_id in dataset.filtered_counts.columns:
-            numerator_counts = wide_counts[(feature_id, numerator_fraction)].to_numpy(dtype = float)
-            denominator_counts = wide_counts[(feature_id, denominator_fraction)].to_numpy(dtype = float)
+            numerator_counts = wide_counts[
+                (feature_id, numerator_fraction)
+            ].to_numpy(dtype = float)
+
+            denominator_counts = wide_counts[
+                (feature_id, denominator_fraction)
+            ].to_numpy(dtype = float)
 
             total_counts = numerator_counts + denominator_counts
             informative = total_counts > 0.0
