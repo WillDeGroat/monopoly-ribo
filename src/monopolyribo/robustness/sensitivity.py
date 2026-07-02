@@ -55,6 +55,8 @@ def filter_sensitivity(dataset: Any, contrast: FractionContrast, engine: str = '
                 metadata = dataset.metadata,
                 subject = dataset.subject,
                 condition = dataset.condition,
+                case = dataset.case,
+                control = dataset.control,
                 fraction = dataset.fraction,
                 fraction_order = dataset.fraction_order,
                 covariates = dataset.covariates,
@@ -67,7 +69,7 @@ def filter_sensitivity(dataset: Any, contrast: FractionContrast, engine: str = '
                 min_samples = dataset.min_samples,
                 n_cpus = dataset.n_cpus,
                 seed = dataset.seed,
-                auto_fit = False
+                quiet = dataset.quiet
             ).fit()
 
             results = MonoPolyStats(

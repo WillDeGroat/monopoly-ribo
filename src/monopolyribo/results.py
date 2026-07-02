@@ -25,6 +25,20 @@ class MonoPolyResult:
     metadata: dict[str, Any]
 
     def __post_init__(self) -> None:
+        self.abundance = self.abundance.copy(deep = True)
+        self.redistribution = self.redistribution.copy(deep = True)
+        self.allocation = self.allocation.copy(deep = True)
+        self.joint = self.joint.copy(deep = True)
+        self.integrated = self.integrated.copy(deep = True)
+        self.classification = self.classification.copy(deep = True)
+        self.stability = self.stability.copy(deep = True)
+        self.diagnostics = self.diagnostics.copy(deep = True)
+        self.fraction_effects = {
+            fraction: results.copy(deep = True)
+            for fraction, results in self.fraction_effects.items()
+        }
+        self.metadata = dict(self.metadata)
+
         _validate_result_table('abundance', self.abundance)
         _validate_result_table('redistribution', self.redistribution)
         _validate_result_table('allocation', self.allocation)
