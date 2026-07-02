@@ -210,7 +210,8 @@ def _validate_simulation_parameters(n_subjects: int, n_features: int, fraction_o
 
     if scenario in REDISTRIBUTION_SCENARIOS and len(fraction_order) < 3:
         raise ValueError(
-            'Redistribution scenarios require an abundance fraction and at least two allocation fractions.'
+            'Redistribution scenarios require an abundance fraction and at least '
+            'two allocation fractions.'
         )
 
 
